@@ -1,0 +1,73 @@
+body {
+    margin: 0;
+    overflow: hidden;
+    background: transparent;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+canvas {
+    position: absolute;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    pointer-events: none;
+}
+
+#ranking {
+    position: absolute;
+    top: 35px;
+    right: 25px;
+    width: 320px;
+    background: rgba(10, 25, 60, 0.88);
+    border: 3px solid #FFD700;
+    border-radius: 18px;
+    padding: 14px;
+    color: #FFFFFF;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
+}
+
+#ranking h3 {
+    margin: 0 0 10px 0;
+    text-align: center;
+    color: #FFD700;
+    font-size: 20px;
+    text-transform: uppercase;
+}
+
+.item-rank {
+    display: flex;
+    justify-content: space-between;
+    font-size: 18px;
+    padding: 6px 8px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+    font-weight: bold;
+}
+
+#caixa-fala {
+    position: absolute;
+    bottom: 80px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 88%;
+    background: rgba(255, 248, 220, 0.96);
+    border: 5px solid #FF9800;
+    border-radius: 25px;
+    padding: 20px;
+    text-align: center;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.45);
+    display: none;
+}
+
+#nome-usuario {
+    font-size: 22px;
+    font-weight: bold;
+    color: #E65100;
+    margin-bottom: 6px;
+}
+
+#texto-fala {
+    font-size: 28px;
+    font-weight: 800;
+    color: #1A237E;
+    line-height: 1.25;
+}
