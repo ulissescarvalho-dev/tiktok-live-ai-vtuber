@@ -32,3 +32,8 @@ venv/
 *.log
 .DS_Store
 Thumbs.db
+
+# Banco de dados local H2
+data/
+demo/data/
+

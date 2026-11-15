@@ -1,115 +1,98 @@
-const canvas = document.getElementById('jogoCanvas');
+const canvas = document.getElementById('tela-jogo');
 const ctx = canvas.getContext('2d');
+canvas.width = 1080;
+canvas.height = 1920;
 
-function ajustarTela() {
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-}
-window.addEventListener('resize', ajustarTela);
-ajustarTela();
+const caixaFala = document.getElementById('caixa-fala');
+const nomeUsuario = document.getElementById('nome-usuario');
+const textoFala = document.getElementById('texto-fala');
+const listaRanking = document.getElementById('lista-ranking');
 
 const itens = [];
 const placar = {};
 
 function atualizarPlacar() {
-    const top3 = Object.entries(placar)
+    const top = Object.entries(placar)
         .sort((a, b) => b[1] - a[1])
         .slice(0, 3);
 
-    const medalhas = ['🥇', '🥈', '🥉'];
-    document.getElementById('lista-top').innerHTML = top3
-        .map(([nome, pontos], idx) =>
-            `<div class="item-rank"><span>${medalhas[idx]} ${nome}</span><span>${pontos} pts</span></div>`
-        )
+    listaRanking.innerHTML = top
+        .map(([user, pts], i) => `<div class="item-rank"><span>${i + 1}º ${user}</span><span>${pts} pts</span></div>`)
         .join('');
 }
 
-function spawnItem(usuario, categoria, pontos) {
-    placar[usuario] = (placar[usuario] || 0) + pontos;
-    atualizarPlacar();
-
-    const quantidade = categoria === 'PRESENTE' ? 12 : 1;
-    const icone = categoria === 'PRESENTE' ? '👑' : (categoria === 'LIKE' ? '🫧' : '🍔');
-    const tamanho = categoria === 'PRESENTE' ? 65 : 45;
-
-    for (let i = 0; i < quantidade; i++) {
-        itens.push({
-            x: Math.random() * (canvas.width - 120) + 60,
-            y: -50 - (i * 45),
-            vy: Math.random() * 4 + 5,
-            vx: (Math.random() - 0.5) * 3,
-            emoji: icone,
-            tamanho: tamanho,
-            nome: i === 0 ? usuario : '',
-            tipo: 'DROP'
-        });
+async function carregarRankingInicial() {
+    try {
+        const resposta = await fetch('/api/ranking/top3');
+        if (resposta.ok) {
+            const top3 = await resposta.json();
+            top3.forEach(item => {
+                placar[item.usuario] = item.pontos;
+            });
+            atualizarPlacar();
+        }
+    } catch (e) {
+        console.warn('Não foi possível carregar o ranking inicial:', e);
     }
 }
 
-// Gera bolhas submarinas contínuas para a tela nunca ficar parada
-setInterval(() => {
-    itens.push({
-        x: Math.random() * canvas.width,
-        y: canvas.height + 20,
-        vy: -(Math.random() * 2 + 1.5),
-        vx: (Math.random() - 0.5) * 1.5,
-        emoji: '🫧',
-        tamanho: Math.random() * 18 + 14,
-        nome: '',
-        tipo: 'BOLHA'
-    });
-}, 800);
+function criarDrop(categoria, usuario, pontos, totalAcumulado) {
+    placar[usuario] = totalAcumulado !== undefined ? totalAcumulado : (placar[usuario] || 0) + pontos;
+    atualizarPlacar();
 
-function loopAnimacao() {
+    const cor = categoria === 'PRESENTE' ? '#FFD700' : (categoria === 'LIKE' ? '#FF4D6D' : '#38BDF8');
+    const emoji = categoria === 'PRESENTE' ? '🍔' : (categoria === 'LIKE' ? '❤️' : '💬');
+
+    itens.push({
+        x: Math.random() * 880 + 100,
+        y: -40,
+        vy: Math.random() * 3 + 4,
+        emoji: emoji,
+        usuario: usuario,
+        cor: cor
+    });
+}
+
+function animar() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     for (let i = itens.length - 1; i >= 0; i--) {
         const it = itens[i];
-        it.x += it.vx;
         it.y += it.vy;
 
-        if (it.tipo === 'DROP') {
-            it.vy += 0.25;
-        }
-
-        if (it.x < 35 || it.x > canvas.width - 35) {
-            it.vx *= -1;
-        }
-
-        ctx.font = `${it.tamanho}px Arial`;
+        ctx.font = '48px Segoe UI Emoji';
         ctx.textAlign = 'center';
         ctx.fillText(it.emoji, it.x, it.y);
 
-        if (it.nome) {
-            ctx.font = 'bold 20px Segoe UI';
-            ctx.fillStyle = '#FFFFFF';
-            ctx.strokeStyle = '#000000';
-            ctx.lineWidth = 4;
-            ctx.strokeText(it.nome, it.x, it.y - it.tamanho * 0.7);
-            ctx.fillText(it.nome, it.x, it.y - it.tamanho * 0.7);
-        }
+        ctx.font = 'bold 20px Fredoka, Segoe UI';
+        ctx.fillStyle = it.cor;
+        ctx.fillText(it.usuario, it.x, it.y - 45);
 
-        if (it.y > canvas.height + 80 || it.y < -100) {
+        if (it.y > canvas.height + 60) {
             itens.splice(i, 1);
         }
     }
-    requestAnimationFrame(loopAnimacao);
+    requestAnimationFrame(animar);
 }
-loopAnimacao();
 
-const protocolo = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-const ws = new WebSocket(`${protocolo}//${window.location.host}/ws-mago`);
+carregarRankingInicial();
+animar();
+
+const ws = new WebSocket('ws://' + window.location.host + '/ws-mago');
 
 ws.onmessage = (event) => {
     const dados = JSON.parse(event.data);
 
     if (dados.tipo === 'DROP') {
-        spawnItem(dados.usuario, dados.categoria, dados.pontos);
-    } else if (dados.estado === 'FALANDO') {
-        document.getElementById('nome-usuario').innerText = `Respondendo a ${dados.usuario}:`;
-        document.getElementById('texto-fala').innerText = dados.fala;
-        document.getElementById('caixa-fala').style.display = 'block';
+        criarDrop(dados.categoria, dados.usuario, dados.pontos, dados.totalAcumulado);
+        return;
+    }
+
+    if (dados.estado === 'FALANDO') {
+        nomeUsuario.textContent = (dados.presente ? '👑 VIP: ' : '💬 ') + dados.usuario;
+        textoFala.textContent = dados.fala;
+        caixaFala.style.display = 'block';
     } else if (dados.estado === 'CALADO') {
-        document.getElementById('caixa-fala').style.display = 'none';
+        caixaFala.style.display = 'none';
     }
 };

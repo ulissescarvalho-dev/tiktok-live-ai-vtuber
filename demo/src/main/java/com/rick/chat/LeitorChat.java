@@ -2,6 +2,8 @@ package com.rick.chat;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rick.fila.GerenciadorFila;
+import com.rick.ranking.Espectador;
+import com.rick.ranking.EspectadorRepository;
 import com.rick.web.PainelSocketHandler;
 import io.github.jwdeveloper.tiktok.client.TikTokLive;
 import org.slf4j.Logger;
@@ -18,9 +20,11 @@ public class LeitorChat {
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
     private final PainelSocketHandler painel;
+    private final EspectadorRepository repository;
 
-    public LeitorChat(PainelSocketHandler painel) {
+    public LeitorChat(PainelSocketHandler painel, EspectadorRepository repository) {
         this.painel = painel;
+        this.repository = repository;
     }
 
     public void conectarNaLive(String usuarioTikTok, GerenciadorFila gerenciador) {
@@ -37,7 +41,7 @@ public class LeitorChat {
                             String usuario = event.getUser().getProfileName();
                             String texto = event.getText().trim();
 
-                            enviarDropJogo("COMENTARIO", usuario, 1);
+                            registrarPontosEEnviarDrop("COMENTARIO", usuario, 1);
 
                             if (texto.length() < 3 || texto.matches("^[kK]+$")) {
                                 return;
@@ -46,14 +50,14 @@ public class LeitorChat {
                         })
                         .onLike((liveClient, event) -> {
                             String usuario = event.getUser().getProfileName();
-                            enviarDropJogo("LIKE", usuario, 2);
+                            registrarPontosEEnviarDrop("LIKE", usuario, 2);
                         })
                         .onGift((liveClient, event) -> {
                             String usuario = event.getUser().getProfileName();
                             String nomePresente = event.getGift().getName();
 
                             log.info("[ALERTA DE PRESENTE]: {} enviou um {}!", usuario, nomePresente);
-                            enviarDropJogo("PRESENTE", usuario, 50);
+                            registrarPontosEEnviarDrop("PRESENTE", usuario, 50);
                             gerenciador.adicionarPresenteNaFila(usuario, nomePresente);
                         })
                         .onConnected((liveClient, event) -> {
@@ -73,17 +77,23 @@ public class LeitorChat {
         threadChat.start();
     }
 
-    private void enviarDropJogo(String categoria, String usuario, int pontos) {
+    private synchronized void registrarPontosEEnviarDrop(String categoria, String usuario, int pontos) {
         try {
+            Espectador espectador = repository.findById(usuario)
+                    .orElseGet(() -> new Espectador(usuario, 0));
+            espectador.adicionarPontos(pontos);
+            repository.save(espectador);
+
             Map<String, Object> payload = Map.of(
                     "tipo", "DROP",
                     "categoria", categoria,
                     "usuario", usuario,
-                    "pontos", pontos
+                    "pontos", pontos,
+                    "totalAcumulado", espectador.getPontos()
             );
             painel.enviarEventoParaTela(objectMapper.writeValueAsString(payload));
         } catch (Exception e) {
-            log.warn("Erro ao serializar evento de drop para o jogo: {}", e.getMessage());
+            log.warn("Erro ao salvar pontos ou enviar drop para {}: {}", usuario, e.getMessage());
         }
     }
 }
