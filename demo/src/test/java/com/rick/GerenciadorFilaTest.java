@@ -70,4 +70,20 @@ class GerenciadorFilaTest {
         assertEquals(1, gerenciador.tamanhoFila());
         assertEquals("FALE EXATAMENTE ISTO AGORA: Aviso importante na live!", gerenciador.obterProximoTextoParaTeste());
     }
+
+    @Test
+    @DisplayName("Deve bloquear flood de mensagens comuns do mesmo usuário dentro de 15 segundos, mas liberar presentes")
+    void deveBloquearFloodDoMesmoUsuarioMasLiberarPresentes() {
+        gerenciador.adicionarNaFila("Spammer", "Primeira mensagem");
+        gerenciador.adicionarNaFila("Spammer", "Segunda mensagem seguida (bloqueada)");
+        gerenciador.adicionarNaFila("Spammer", "Terceira mensagem seguida (bloqueada)");
+
+        assertEquals(1, gerenciador.tamanhoFila());
+
+        gerenciador.adicionarPresenteNaFila("Spammer", "Leão");
+        assertEquals(2, gerenciador.tamanhoFila());
+        assertEquals("TE ENVIOU UM PRESENTE: Leão", gerenciador.obterProximoTextoParaTeste());
+        assertEquals("Primeira mensagem", gerenciador.obterProximoTextoParaTeste());
+    }
+
 }

@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
@@ -23,8 +24,10 @@ public class GerenciadorFila {
     private static final Logger log = LoggerFactory.getLogger(GerenciadorFila.class);
     private static final ObjectMapper objectMapper = new ObjectMapper();
     private static final int LIMITE_FILA_COMUM = 3;
+    private static final long COOLDOWN_USUARIO_MS = 15_000L;
 
     private final PriorityBlockingQueue<ComentarioEvento> fila = new PriorityBlockingQueue<>();
+    private final ConcurrentHashMap<String, Long> ultimoEnvioPorUsuario = new ConcurrentHashMap<>();
     private final CerebroIA cerebro;
     private final PainelSocketHandler painel;
     private final AtomicLong contadorIds = new AtomicLong(0);
@@ -78,6 +81,16 @@ public class GerenciadorFila {
         if (pausado.get() || fila.size() >= LIMITE_FILA_COMUM) {
             return;
         }
+
+        long agora = System.currentTimeMillis();
+        String chaveUsuario = usuario.toLowerCase().trim();
+        Long ultimoEnvio = ultimoEnvioPorUsuario.get(chaveUsuario);
+
+        if (ultimoEnvio != null && (agora - ultimoEnvio) < COOLDOWN_USUARIO_MS) {
+            return;
+        }
+
+        ultimoEnvioPorUsuario.put(chaveUsuario, agora);
         fila.offer(new ComentarioEvento(usuario, texto, 1, contadorIds.incrementAndGet()));
     }
 
@@ -96,7 +109,8 @@ public class GerenciadorFila {
 
     public void limparFila() {
         fila.clear();
-        log.info("Fila de mensagens limpa manualmente pelo moderador.");
+        ultimoEnvioPorUsuario.clear();
+        log.info("Fila de mensagens e cooldowns limpos manualmente pelo moderador.");
     }
 
     public void falarDiretoComPrioridade(String textoDireto) {
