@@ -1,0 +1,24 @@
+### 1. Consultar Status da Fila e Pausa
+GET http://localhost:8080/api/admin/status
+X-API-KEY: bob-admin-2026
+
+### 2. Fazer o Bob Esponja Falar na Hora (Prioridade VIP)
+POST http://localhost:8080/api/admin/falar
+X-API-KEY: bob-admin-2026
+Content-Type: application/json
+
+{
+  "frase": "Bem-vindos ao Siri Cascudo! Mandem perguntas no chat!"
+}
+
+### 3. Pausar Leitura de Comentários Comuns
+POST http://localhost:8080/api/admin/pausar?ativo=true
+X-API-KEY: bob-admin-2026
+
+### 4. Retomar Leitura de Comentários Comuns
+POST http://localhost:8080/api/admin/pausar?ativo=false
+X-API-KEY: bob-admin-2026
+
+### 5. Limpar Fila de Mensagens Acumuladas
+DELETE http://localhost:8080/api/admin/fila
+X-API-KEY: bob-admin-2026
