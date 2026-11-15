@@ -14,7 +14,7 @@ import java.util.Deque;
 public class CerebroIA {
 
     private static final Logger log = LoggerFactory.getLogger(CerebroIA.class);
-    private static final int MAX_HISTORICO = 4;
+    private static final int MAX_HISTORICO = 2;
 
     private final OllamaChatModel model;
     private final String promptSistema;
@@ -31,13 +31,13 @@ public class CerebroIA {
                 .modelName(modeloNome)
                 .numPredict(maxTokens)
                 .temperature(temperatura)
-                .timeout(Duration.ofSeconds(15))
+                .timeout(Duration.ofSeconds(45))
                 .maxRetries(0)
                 .build();
 
-        this.promptSistema = "Você é o Bob Esponja Calça Quadrada numa live do TikTok. "
-                + "Responda em português em no máximo 1 frase curta e engraçada (até 10 palavras). "
-                + "NUNCA use asteriscos, parênteses ou descrições de ação.";
+        this.promptSistema = "Você é o Bob Esponja Calça Quadrada, animado e engraçado, fazendo uma live no TikTok. "
+                + "Responda APENAS ao usuário atual em português, usando no máximo 1 frase curta e divertida (até 12 palavras). "
+                + "Nunca use asteriscos, parênteses ou descrições de ação.";
     }
 
     public synchronized String processarMensagem(String usuario, String mensagemDoChat) {
@@ -45,13 +45,13 @@ public class CerebroIA {
             StringBuilder contexto = new StringBuilder(promptSistema).append("\n");
 
             if (!historicoRecente.isEmpty()) {
-                contexto.append("Contexto recente da conversa:\n");
+                contexto.append("Últimas falas da live (apenas referência):\n");
                 for (String interacao : historicoRecente) {
                     contexto.append("- ").append(interacao).append("\n");
                 }
             }
 
-            contexto.append("Agora, ").append(usuario).append(" disse: ").append(mensagemDoChat);
+            contexto.append("Responda agora para ").append(usuario).append(": ").append(mensagemDoChat);
 
             String respostaIA = model.generate(contexto.toString());
             String respostaLimpa = respostaIA.replaceAll("\\*.*?\\*", "")
@@ -59,10 +59,7 @@ public class CerebroIA {
                     .replace("[Bob Esponja]:", "")
                     .trim();
 
-            if (!"Sistema".equalsIgnoreCase(usuario)) {
-                registrarNoHistorico(usuario, mensagemDoChat, respostaLimpa);
-            }
-
+            registrarNoHistorico(usuario, mensagemDoChat, respostaLimpa);
             return respostaLimpa;
         } catch (Exception e) {
             log.warn("Falha ao consultar Ollama para o usuário {}: {}", usuario, e.getMessage());
@@ -74,7 +71,7 @@ public class CerebroIA {
         if (historicoRecente.size() >= MAX_HISTORICO) {
             historicoRecente.pollFirst();
         }
-        historicoRecente.addLast(usuario + ": \"" + mensagem + "\" -> Você respondeu: \"" + resposta + "\"");
+        historicoRecente.addLast(usuario + " disse: \"" + mensagem + "\"");
     }
 
     public synchronized int tamanhoHistorico() {
