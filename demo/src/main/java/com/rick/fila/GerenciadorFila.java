@@ -83,6 +83,15 @@ public class GerenciadorFila {
         fila.offer(new ComentarioEvento(usuario, "TE ENVIOU UM PRESENTE: " + nomePresente, 10, contadorIds.incrementAndGet()));
     }
 
+    public int tamanhoFila() {
+        return fila.size();
+    }
+
+    public String obterProximoTextoParaTeste() {
+        ComentarioEvento ev = fila.poll();
+        return ev != null ? ev.texto() : null;
+    }
+
     private void executarCicloVoz() {
         while (!Thread.currentThread().isInterrupted()) {
             try {
