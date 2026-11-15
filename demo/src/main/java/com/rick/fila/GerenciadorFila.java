@@ -14,6 +14,7 @@ import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.concurrent.PriorityBlockingQueue;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 @Service
@@ -27,6 +28,7 @@ public class GerenciadorFila {
     private final CerebroIA cerebro;
     private final PainelSocketHandler painel;
     private final AtomicLong contadorIds = new AtomicLong(0);
+    private final AtomicBoolean pausado = new AtomicBoolean(false);
 
     private volatile Process processoPythonAtual;
     private Thread workerThread;
@@ -73,7 +75,7 @@ public class GerenciadorFila {
     }
 
     public void adicionarNaFila(String usuario, String texto) {
-        if (fila.size() >= LIMITE_FILA_COMUM) {
+        if (pausado.get() || fila.size() >= LIMITE_FILA_COMUM) {
             return;
         }
         fila.offer(new ComentarioEvento(usuario, texto, 1, contadorIds.incrementAndGet()));
@@ -81,6 +83,24 @@ public class GerenciadorFila {
 
     public void adicionarPresenteNaFila(String usuario, String nomePresente) {
         fila.offer(new ComentarioEvento(usuario, "TE ENVIOU UM PRESENTE: " + nomePresente, 10, contadorIds.incrementAndGet()));
+    }
+
+    public void definirPausa(boolean statusPausa) {
+        this.pausado.set(statusPausa);
+        log.info("Estado da fila alterado para: {}", statusPausa ? "PAUSADO" : "ATIVO");
+    }
+
+    public boolean isPausado() {
+        return pausado.get();
+    }
+
+    public void limparFila() {
+        fila.clear();
+        log.info("Fila de mensagens limpa manualmente pelo moderador.");
+    }
+
+    public void falarDiretoComPrioridade(String textoDireto) {
+        fila.offer(new ComentarioEvento("Moderador", "FALE EXATAMENTE ISTO AGORA: " + textoDireto, 20, contadorIds.incrementAndGet()));
     }
 
     public int tamanhoFila() {
@@ -124,7 +144,7 @@ public class GerenciadorFila {
                                 .replace("\"", "").replace("'", "").replace("*", "").trim();
 
                         log.info("[Bob Esponja] ({}): {}", ev.usuario(), fala);
-                        enviarEstadoTela("FALANDO", ev.usuario(), fala, ev.prioridade() == 10);
+                        enviarEstadoTela("FALANDO", ev.usuario(), fala, ev.prioridade() >= 10);
 
                         out.write(fala + "\n");
                         out.flush();

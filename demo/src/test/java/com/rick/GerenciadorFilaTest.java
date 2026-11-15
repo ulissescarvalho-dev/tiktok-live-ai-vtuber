@@ -56,4 +56,18 @@ class GerenciadorFilaTest {
         assertEquals(4, gerenciador.tamanhoFila());
         assertEquals("TE ENVIOU UM PRESENTE: Coroa", gerenciador.obterProximoTextoParaTeste());
     }
+
+    @Test
+    @DisplayName("Deve ignorar comentários comuns quando pausado, mas permitir fala direta do moderador")
+    void deveIgnorarComentariosQuandoPausadoEPermitirModerador() {
+        gerenciador.definirPausa(true);
+        assertTrue(gerenciador.isPausado());
+
+        gerenciador.adicionarNaFila("Usuario1", "Mensagem ignorada na pausa");
+        assertEquals(0, gerenciador.tamanhoFila());
+
+        gerenciador.falarDiretoComPrioridade("Aviso importante na live!");
+        assertEquals(1, gerenciador.tamanhoFila());
+        assertEquals("FALE EXATAMENTE ISTO AGORA: Aviso importante na live!", gerenciador.obterProximoTextoParaTeste());
+    }
 }
