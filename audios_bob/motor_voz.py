@@ -1,20 +1,29 @@
-import sys, os, subprocess
+import sys
+import os
+import subprocess
 import soundfile as sf
 import sounddevice as sd
 
-os.chdir(r'C:\Users\carva\AppData\Local\Applio\data\runtime')
-sys.path.insert(0, r'C:\Users\carva\AppData\Local\Applio\app')
-sys.path.insert(0, r'C:\Users\carva\AppData\Local\Applio\app\backend\applio')
+RUNTIME_DIR = os.getenv('VOICE_WORKDIR', r'C:\Users\carva\AppData\Local\Applio\data\runtime')
+APPLIO_APP_DIR = os.getenv('APPLIO_APP_DIR', r'C:\Users\carva\AppData\Local\Applio\app')
+PTH = os.getenv('RVC_MODEL_PTH', r'C:\Users\carva\AppData\Local\Applio\logs\BobEsponja\modelo.pth')
+AUDIO_DEVICE = os.getenv('AUDIO_DEVICE', 'CABLE Input')
+
+os.chdir(RUNTIME_DIR)
+sys.path.insert(0, APPLIO_APP_DIR)
+sys.path.insert(0, os.path.join(APPLIO_APP_DIR, 'backend', 'applio'))
 
 from backend.applio.rvc.infer.infer import VoiceConverter
 
 PASTA_SAIDA = os.path.dirname(os.path.abspath(__file__))
 BASE_MP3 = os.path.join(PASTA_SAIDA, 'base.mp3')
 BOB_WAV = os.path.join(PASTA_SAIDA, 'bob.wav')
-PTH = r'C:\Users\carva\AppData\Local\Applio\logs\BobEsponja\modelo.pth'
 
 vc = VoiceConverter()
-cabo_id = next((i for i, d in enumerate(sd.query_devices()) if 'CABLE Input' in d['name'] and d['max_output_channels'] > 0), None)
+cabo_id = next(
+    (i for i, d in enumerate(sd.query_devices()) if AUDIO_DEVICE in d['name'] and d['max_output_channels'] > 0),
+    None
+)
 
 print('WORKER_PRONTO', flush=True)
 

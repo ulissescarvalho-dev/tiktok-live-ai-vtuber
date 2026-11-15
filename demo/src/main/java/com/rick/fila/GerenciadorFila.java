@@ -1,94 +1,165 @@
 package com.rick.fila;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rick.ia.CerebroIA;
 import com.rick.web.PainelSocketHandler;
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+
 import java.io.*;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Paths;
+import java.util.Map;
 import java.util.concurrent.PriorityBlockingQueue;
+import java.util.concurrent.atomic.AtomicLong;
 
 @Service
 public class GerenciadorFila {
 
+    private static final Logger log = LoggerFactory.getLogger(GerenciadorFila.class);
+    private static final ObjectMapper objectMapper = new ObjectMapper();
+    private static final int LIMITE_FILA_COMUM = 3;
+
     private final PriorityBlockingQueue<ComentarioEvento> fila = new PriorityBlockingQueue<>();
     private final CerebroIA cerebro;
     private final PainelSocketHandler painel;
-    private long contadorIds = 0;
+    private final AtomicLong contadorIds = new AtomicLong(0);
+
+    private volatile Process processoPythonAtual;
+    private Thread workerThread;
+
+    @Value("${app.voz.python-exe}")
+    private String pythonExe;
+
+    @Value("${app.voz.script-path}")
+    private String scriptPath;
+
+    @Value("${app.voz.working-dir}")
+    private String workingDir;
+
+    @Value("${app.voz.applio-app-dir}")
+    private String applioAppDir;
+
+    @Value("${app.voz.modelo-pth}")
+    private String modeloPth;
+
+    @Value("${app.voz.dispositivo-audio}")
+    private String dispositivoAudio;
 
     public GerenciadorFila(CerebroIA cerebro, PainelSocketHandler painel) {
         this.cerebro = cerebro;
         this.painel = painel;
-        iniciarConsumidor();
     }
 
-    public synchronized void adicionarNaFila(String usuario, String texto) {
-        if (fila.size() >= 3) return;
-        fila.offer(new ComentarioEvento(usuario, texto, 1, ++contadorIds));
+    @PostConstruct
+    public void iniciar() {
+        workerThread = new Thread(this::executarCicloVoz, "worker-voz-gpu");
+        workerThread.setDaemon(true);
+        workerThread.start();
     }
 
-    public synchronized void adicionarPresenteNaFila(String usuario, String nomePresente) {
-        fila.offer(new ComentarioEvento(usuario, "TE ENVIOU UM PRESENTE: " + nomePresente, 10, ++contadorIds));
+    @PreDestroy
+    public void encerrar() {
+        log.info("Encerrando motor de voz e liberando memória da GPU...");
+        if (workerThread != null) {
+            workerThread.interrupt();
+        }
+        if (processoPythonAtual != null && processoPythonAtual.isAlive()) {
+            processoPythonAtual.destroyForcibly();
+        }
     }
 
-    private void iniciarConsumidor() {
-        new Thread(() -> {
+    public void adicionarNaFila(String usuario, String texto) {
+        if (fila.size() >= LIMITE_FILA_COMUM) {
+            return;
+        }
+        fila.offer(new ComentarioEvento(usuario, texto, 1, contadorIds.incrementAndGet()));
+    }
+
+    public void adicionarPresenteNaFila(String usuario, String nomePresente) {
+        fila.offer(new ComentarioEvento(usuario, "TE ENVIOU UM PRESENTE: " + nomePresente, 10, contadorIds.incrementAndGet()));
+    }
+
+    private void executarCicloVoz() {
+        while (!Thread.currentThread().isInterrupted()) {
             try {
-                String py = "C:\\Users\\carva\\AppData\\Local\\Applio\\data\\runtime\\.venv\\Scripts\\python.exe";
-                String script = "C:\\Users\\carva\\bottiktok\\audios_bob\\motor_voz.py";
-
-                ProcessBuilder pb = new ProcessBuilder(py, script);
-                pb.directory(new File("C:\\Users\\carva\\AppData\\Local\\Applio\\data\\runtime"));
+                ProcessBuilder pb = new ProcessBuilder(pythonExe, scriptPath);
+                pb.directory(new File(workingDir));
                 pb.redirectErrorStream(true);
-                Process proc = pb.start();
 
-                BufferedWriter out = new BufferedWriter(new OutputStreamWriter(proc.getOutputStream(), StandardCharsets.UTF_8));
-                BufferedReader in = new BufferedReader(new InputStreamReader(proc.getInputStream(), StandardCharsets.UTF_8));
+                Map<String, String> env = pb.environment();
+                env.put("VOICE_WORKDIR", workingDir);
+                env.put("APPLIO_APP_DIR", applioAppDir);
+                env.put("RVC_MODEL_PTH", modeloPth);
+                env.put("AUDIO_DEVICE", dispositivoAudio);
 
-                String l;
-                while ((l = in.readLine()) != null) {
-                    if (l.contains("WORKER_PRONTO")) {
-                        System.out.println("=== MOTOR DE VOZ PRONTO NA GPU! ===");
-                        break;
+                processoPythonAtual = pb.start();
+
+                try (BufferedWriter out = new BufferedWriter(new OutputStreamWriter(processoPythonAtual.getOutputStream(), StandardCharsets.UTF_8));
+                     BufferedReader in = new BufferedReader(new InputStreamReader(processoPythonAtual.getInputStream(), StandardCharsets.UTF_8))) {
+
+                    String linha;
+                    while ((linha = in.readLine()) != null) {
+                        if (linha.contains("WORKER_PRONTO")) {
+                            log.info("=== MOTOR DE VOZ PRONTO NA GPU! ===");
+                            break;
+                        }
+                    }
+
+                    while (processoPythonAtual.isAlive() && !Thread.currentThread().isInterrupted()) {
+                        ComentarioEvento ev = fila.take();
+                        String fala = cerebro.processarMensagem(ev.usuario(), ev.texto())
+                                .replace("\"", "").replace("'", "").replace("*", "").trim();
+
+                        log.info("[Bob Esponja] ({}): {}", ev.usuario(), fala);
+                        enviarEstadoTela("FALANDO", ev.usuario(), fala, ev.prioridade() == 10);
+
+                        out.write(fala + "\n");
+                        out.flush();
+
+                        while ((linha = in.readLine()) != null) {
+                            if (linha.contains("FIM_FALA") || linha.contains("ERRO:")) {
+                                break;
+                            }
+                        }
+
+                        enviarEstadoTela("CALADO", null, null, false);
                     }
                 }
-
-                while (true) {
-                    ComentarioEvento ev = fila.take();
-                    String fala = cerebro.processarMensagem(ev.usuario, ev.texto)
-                            .replace("\"", "").replace("'", "").replace("*", "").trim();
-                    System.out.println("[Bob Esponja]: " + fala);
-
-                    painel.enviarEventoParaTela(String.format(
-                            "{\"estado\":\"FALANDO\", \"usuario\":\"%s\", \"fala\":\"%s\", \"presente\":%b}",
-                            escapar(ev.usuario), escapar(fala), ev.prioridade == 10));
-
-                    out.write(fala + "\n");
-                    out.flush();
-
-                    while ((l = in.readLine()) != null) {
-                        if (l.contains("FIM_FALA") || l.contains("ERRO:")) break;
-                    }
-                    painel.enviarEventoParaTela("{\"estado\":\"CALADO\"}");
-                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
             } catch (Exception e) {
-                System.out.println("[Erro]: " + e.getMessage());
+                log.error("Falha no motor de voz. Reiniciando worker em 3 segundos...", e);
+                enviarEstadoTela("CALADO", null, null, false);
+                try {
+                    Thread.sleep(3000);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                }
             }
-        }).start();
+        }
     }
 
-    private String escapar(String t) {
-        return t.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", " ");
+    private void enviarEstadoTela(String estado, String usuario, String fala, boolean presente) {
+        try {
+            Map<String, Object> payload = estado.equals("FALANDO")
+                    ? Map.of("estado", estado, "usuario", usuario, "fala", fala, "presente", presente)
+                    : Map.of("estado", estado);
+
+            painel.enviarEventoParaTela(objectMapper.writeValueAsString(payload));
+        } catch (Exception e) {
+            log.warn("Erro ao serializar JSON para tela: {}", e.getMessage());
+        }
     }
 
-    private static class ComentarioEvento implements Comparable<ComentarioEvento> {
-        final String usuario, texto;
-        final int prioridade;
-        final long id;
-        ComentarioEvento(String u, String t, int p, long id) { usuario = u; texto = t; prioridade = p; this.id = id; }
+    private record ComentarioEvento(String usuario, String texto, int prioridade, long id) implements Comparable<ComentarioEvento> {
+        @Override
         public int compareTo(ComentarioEvento o) {
-            int c = Integer.compare(o.prioridade, prioridade);
-            return c != 0 ? c : Long.compare(id, o.id);
+            int comparacaoPrioridade = Integer.compare(o.prioridade, this.prioridade);
+            return comparacaoPrioridade != 0 ? comparacaoPrioridade : Long.compare(this.id, o.id);
         }
     }
 }

@@ -1,5 +1,34 @@
-
-.idea/
+# Pastas de build e IDE
+target/
 demo/target/
+.idea/
+*.iml
+.vscode/
+
+# Variáveis de ambiente locais (mantém apenas o .env.example)
+.env
+*.env.local
+
+# Áudios temporários gerados em tempo real pelo TTS/RVC
 audios_bob/*.mp3
 audios_bob/*.wav
+*.wav
+*.mp3
+
+# Modelos 3D, pesos pesados e arquivos do Blender
+*.pth
+*.index
+*.vrm
+*.glb
+*.fbx
+*.blend
+*.blend1
+
+# Python e Sistema Operacional
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.log
+.DS_Store
+Thumbs.db

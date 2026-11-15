@@ -1,6 +1,10 @@
 package com.rick.fila;
 
 import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayOutputStream;
@@ -13,51 +17,71 @@ import java.nio.charset.StandardCharsets;
 @Service
 public class AnimadorVMC {
 
+    private static final Logger log = LoggerFactory.getLogger(AnimadorVMC.class);
+
+    @Value("${app.vmc.host}")
+    private String vmcHost;
+
+    @Value("${app.vmc.porta}")
+    private int vmcPorta;
+
+    private Thread threadAnimacao;
+
     @PostConstruct
     public void iniciarMovimentoContinuo() {
-        new Thread(() -> {
+        threadAnimacao = new Thread(() -> {
             try (DatagramSocket socket = new DatagramSocket()) {
-                InetAddress localhost = InetAddress.getByName("127.0.0.1");
-                int portaVSeeFace = 39539;
+                InetAddress destino = InetAddress.getByName(vmcHost);
                 double tempo = 0;
 
-                while (true) {
+                while (!Thread.currentThread().isInterrupted()) {
                     tempo += 0.05;
 
                     float balancoZ = (float) (Math.sin(tempo) * 0.06);
                     float giroY = (float) (Math.cos(tempo * 0.7) * 0.08);
                     float acenoX = (float) (Math.sin(tempo * 1.3) * 0.04);
 
-                    // Corpo e Cabeça
-                    enviarOssoVMC(socket, localhost, portaVSeeFace, "Spine", 0f, giroY * 0.5f, balancoZ * 0.5f);
-                    enviarOssoVMC(socket, localhost, portaVSeeFace, "Head", acenoX, giroY, balancoZ);
+                    enviarOssoVMC(socket, destino, vmcPorta, "Spine", 0f, giroY * 0.5f, balancoZ * 0.5f, 1.0f);
+                    enviarOssoVMC(socket, destino, vmcPorta, "Head", acenoX, giroY, balancoZ, 1.0f);
 
-                    // Abaixa os braços para o lado do corpo (w = 0.85 ajusta a inclinação natural)
                     float movimentoBraco = (float) (Math.sin(tempo * 0.8) * 0.03);
-                    enviarOssoVMCComW(socket, localhost, portaVSeeFace, "LeftUpperArm", 0f, 0f, -0.55f + movimentoBraco, 0.83f);
-                    enviarOssoVMCComW(socket, localhost, portaVSeeFace, "RightUpperArm", 0f, 0f, 0.55f - movimentoBraco, 0.83f);
+                    enviarOssoVMC(socket, destino, vmcPorta, "LeftUpperArm", 0f, 0f, -0.55f + movimentoBraco, 0.83f);
+                    enviarOssoVMC(socket, destino, vmcPorta, "RightUpperArm", 0f, 0f, 0.55f - movimentoBraco, 0.83f);
 
                     Thread.sleep(33);
                 }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
             } catch (Exception e) {
-                System.out.println("[Animador VMC]: " + e.getMessage());
+                log.warn("[Animador VMC]: {}", e.getMessage());
             }
-        }).start();
+        }, "vmc-udp-animator");
+
+        threadAnimacao.setDaemon(true);
+        threadAnimacao.start();
     }
 
-    private void enviarOssoVMC(DatagramSocket socket, InetAddress ip, int porta, String osso, float rx, float ry, float rz) throws Exception {
-        enviarOssoVMCComW(socket, ip, porta, osso, rx, ry, rz, 1.0f);
+    @PreDestroy
+    public void encerrar() {
+        if (threadAnimacao != null) {
+            threadAnimacao.interrupt();
+        }
     }
 
-    private void enviarOssoVMCComW(DatagramSocket socket, InetAddress ip, int porta, String osso, float rx, float ry, float rz, float rw) throws Exception {
+    private void enviarOssoVMC(DatagramSocket socket, InetAddress ip, int porta, String osso, float rx, float ry, float rz, float rw) throws Exception {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         escreverStringOSC(out, "/VMC/Ext/Bone/Pos");
         escreverStringOSC(out, ",sfffffff");
         escreverStringOSC(out, osso);
 
         ByteBuffer buf = ByteBuffer.allocate(28);
-        buf.putFloat(0f); buf.putFloat(0f); buf.putFloat(0f);
-        buf.putFloat(rx); buf.putFloat(ry); buf.putFloat(rz); buf.putFloat(rw);
+        buf.putFloat(0f);
+        buf.putFloat(0f);
+        buf.putFloat(0f);
+        buf.putFloat(rx);
+        buf.putFloat(ry);
+        buf.putFloat(rz);
+        buf.putFloat(rw);
         out.write(buf.array());
 
         byte[] dados = out.toByteArray();
@@ -68,6 +92,8 @@ public class AnimadorVMC {
         byte[] bytes = s.getBytes(StandardCharsets.UTF_8);
         out.write(bytes);
         int pad = 4 - (bytes.length % 4);
-        for (int i = 0; i < pad; i++) out.write(0);
+        for (int i = 0; i < pad; i++) {
+            out.write(0);
+        }
     }
 }

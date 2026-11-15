@@ -1,14 +1,21 @@
 package com.rick.chat;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rick.fila.GerenciadorFila;
 import com.rick.web.PainelSocketHandler;
 import io.github.jwdeveloper.tiktok.client.TikTokLive;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
+import java.util.Map;
 
 @Service
 public class LeitorChat {
+
+    private static final Logger log = LoggerFactory.getLogger(LeitorChat.class);
+    private static final ObjectMapper objectMapper = new ObjectMapper();
 
     private final PainelSocketHandler painel;
 
@@ -17,9 +24,9 @@ public class LeitorChat {
     }
 
     public void conectarNaLive(String usuarioTikTok, GerenciadorFila gerenciador) {
-        new Thread(() -> {
+        Thread threadChat = new Thread(() -> {
             try {
-                System.out.println("Iniciando conexão nativa com o TikTok: " + usuarioTikTok);
+                log.info("Iniciando conexão nativa com o TikTok: {}", usuarioTikTok);
 
                 TikTokLive.newClient(usuarioTikTok)
                         .configure(settings -> {
@@ -45,30 +52,38 @@ public class LeitorChat {
                             String usuario = event.getUser().getProfileName();
                             String nomePresente = event.getGift().getName();
 
-                            System.out.println("\n[ALERTA DE PRESENTE]: " + usuario + " enviou um " + nomePresente + "!");
+                            log.info("[ALERTA DE PRESENTE]: {} enviou um {}!", usuario, nomePresente);
                             enviarDropJogo("PRESENTE", usuario, 50);
                             gerenciador.adicionarPresenteNaFila(usuario, nomePresente);
                         })
                         .onConnected((liveClient, event) -> {
-                            System.out.println("=== CONECTADO COM SUCESSO À LIVE DE " + usuarioTikTok + " ===");
+                            log.info("=== CONECTADO COM SUCESSO À LIVE DE {} ===", usuarioTikTok);
                         })
                         .onError((liveClient, event) -> {
-                            System.out.println("[Erro TikTok]: " + event.getException().getMessage());
+                            log.warn("[Erro TikTok]: {}", event.getException().getMessage());
                         })
                         .buildAndConnect();
 
             } catch (Exception e) {
-                System.out.println("\n[Aviso]: Conexão finalizada. Verifique se o perfil está AO VIVO.");
+                log.warn("[Aviso]: Conexão finalizada para {}. Verifique se o perfil está AO VIVO.", usuarioTikTok);
             }
-        }).start();
+        }, "tiktok-chat-listener");
+
+        threadChat.setDaemon(true);
+        threadChat.start();
     }
 
     private void enviarDropJogo(String categoria, String usuario, int pontos) {
-        String usuarioLimpo = usuario.replace("\\", "\\\\").replace("\"", "\\\"");
-        String json = String.format(
-                "{\"tipo\":\"DROP\", \"categoria\":\"%s\", \"usuario\":\"%s\", \"pontos\":%d}",
-                categoria, usuarioLimpo, pontos
-        );
-        painel.enviarEventoParaTela(json);
+        try {
+            Map<String, Object> payload = Map.of(
+                    "tipo", "DROP",
+                    "categoria", categoria,
+                    "usuario", usuario,
+                    "pontos", pontos
+            );
+            painel.enviarEventoParaTela(objectMapper.writeValueAsString(payload));
+        } catch (Exception e) {
+            log.warn("Erro ao serializar evento de drop para o jogo: {}", e.getMessage());
+        }
     }
 }
